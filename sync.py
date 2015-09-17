@@ -2,8 +2,12 @@
 
 import requests
 import json
-from pprint import pprint as pp
 import os
+
+# Command line arguments follow the GNU conventions.
+from getopt import gnu_getopt
+from sys import argv, exit
+
 
 def cmp_filter(dict1, dict2, filter):
     """ Returns dicts cmp() comparing only keys in filter """
@@ -12,9 +16,10 @@ def cmp_filter(dict1, dict2, filter):
     return cmp(dict1, dict2)
 
 class CkanApi:
-    def __init__(self, url, key):
+    def __init__(self, url, key, temp_path):
         self.url = url
         self.key = key
+        self.temp_path = temp_path
         self.headers = {'Authorization': self.key}
 
     def list_packages(self):
@@ -66,11 +71,13 @@ class CkanApi:
 
     def download(self, url, filename):
         r = requests.get(url)
-        with open(filename, 'wb') as fd:
+        with open(self.temp_path + filename, 'wb') as fd:
             for chunk in r.iter_content(4096):
                 fd.write(chunk)
 
 def sync_package(package, source, dest):
+    # How many changes were done.
+    update_counter = 0
     # Create package if it isn't in destination
     s_pack = source.get_package(package)['result']
     if (dest.get_package(package)['success'] == False):
@@ -82,11 +89,12 @@ def sync_package(package, source, dest):
                 'extras': [{'key': 'source', 'value': s_pack['id']}]
                 }
         print 'Creating package: %(name)s' % s_pack
+        update_counter += 1
         d_pack = dest.create_package(params)['result']
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (cmp_filter(s_pack, d_pack, ['title', 'notes', 'owner_org']) != 0):
+    if (cmp_filter(s_pack, d_pack, ['title', 'notes']) != 0):
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
@@ -94,6 +102,7 @@ def sync_package(package, source, dest):
                 }
         d_pack.update(params)
         print 'Updating package: %(name)s' % s_pack
+        update_counter += 1
         dest.update_package(d_pack)
 
     # Update resources
@@ -121,10 +130,12 @@ def sync_package(package, source, dest):
 
         if (d_result['result']['count'] == 0):
             print 'Create resource: %(name)s' % s_resource
+            update_counter += 1
             dest.create_resource(data, files)
         elif (cmp_filter(s_resource, d_resource, ['name', 'description', 'position', 'last_modified']) != 0):
             print 'Update resource: %(name)s' % s_resource
             data['id'] = d_resource.get('id')
+            update_counter += 1
             dest.update_resource(data, files)
         # Delete downloaded file
         os.remove(filename)
@@ -136,33 +147,76 @@ def sync_package(package, source, dest):
     for d_hash, res in d_hashes.iteritems():
         if d_hash not in s_ids:
             print 'Delete resource: %(name)s' % res
+            update_counter += 1
             dest.delete_resource(res['id'])
+    return update_counter
 
 
 def sync_all(source, dest):
+    update_counter = 0
     # Delete packages that shouldn't be there
     source_pckgs = source.list_packages()
     for package in source_pckgs:
-        print "Syncing: %s" % package
-        sync_package(package, source, dest)
+        print 'Syncing: %s' % package
+        update_counter += sync_package(package, source, dest)
 
     for package in dest.list_packages():
         if package not in source_pckgs:
-            print "Deleting: %s" % package
-            dest.delete_package(package)
+            print 'Deleting: %s' % package
+            update_counter += dest.delete_package(package)
+    return update_counter
+
+
+def print_help():
+    print 'Usage: '+argv[0]+' [OPTIONS]'
+    print 'Runs CKAN sync script with given options.'
+    print ''
+    print 'OPTIONS:'
+    print '  --help, -h                 Display this help.'
+    print ''
+    print '  --source, -s               URL of source CKAN.'
+    print '  --source-api-key, -S       API key for source CKAN.'
+    print ''
+    print '  --destination, -d          URL of source CKAN.'
+    print '  --destination-api-key, -D  API key for source CKAN.'
+    print ''
+    print '  --temporary-path, -t       Path to save temporary files.'
+
 
 if __name__ == '__main__':
 
-    source_api = 'http://ckan2.ntkcz.cz/api/3/'
+    opts, args = gnu_getopt(argv, 'hs:S:d:D:t:', 
+            ['help', 'source=', 'source-api-key=', 'destination=',
+             'destination-api-key=', 'temporary-path='])
+
+    source_api = ''
     source_api_key = ''
+    dest_api = ''
+    dest_api_key = ''
+    temp_path = ''
 
-    dest_api = 'http://ckan.ntkcz.cz/api/3/'
-    dest_api_key = 'a77b53b7-1549-48fa-916c-0016744e5851'
+    for o, a in opts:
 
+        if o in ('-s', '--source'):
+            source_api = a
+        elif o in ('-S', '--source-api-key'):
+            source_api_key = a
+        elif o in ('-d', '--destination'):
+            dest_api = a
+        elif o in ('-D', '--destination-api-key'):
+            dest_api_key = a
+        elif o in ('-t', '--temporary-path'):
+            temp_path = a
+        elif o in ('-h', '--help'):
+            print_help()
+            exit()
 
-    source = CkanApi(source_api, source_api_key)
-    dest = CkanApi(dest_api, dest_api_key)
-    sync_all(source, dest)
+    source = CkanApi(source_api, source_api_key, temp_path)
+    dest = CkanApi(dest_api, dest_api_key, temp_path)
+    if sync_all(source, dest) > 0:
+        exit(1)
+    else:
+        exit(0)
 
 # vim:set sw=4 ts=4 et:
 # -*- coding: utf-8 -*-
