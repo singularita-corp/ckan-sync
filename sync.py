@@ -71,7 +71,7 @@ class CkanApi:
 
     def download(self, url, filename):
         r = requests.get(url)
-        with open(self.temp_path + filename, 'wb') as fd:
+        with open('%s/%s' % (self.temp_path, filename), 'wb') as fd:
             for chunk in r.iter_content(4096):
                 fd.write(chunk)
 
@@ -193,7 +193,7 @@ if __name__ == '__main__':
     source_api_key = ''
     dest_api = ''
     dest_api_key = ''
-    temp_path = ''
+    temp_path = '.'
 
     for o, a in opts:
 
