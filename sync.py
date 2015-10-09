@@ -179,19 +179,19 @@ def sync_package(package, source, dest):
                 'last_modified': s_resource['last_modified'],
                 'url': ''
                 }
-        files = [('upload', file(filename))]
+        files = [('upload', file("%s/%s" % (source.temp_path, filename)))]
 
         if (d_result['result']['count'] == 0):
             print 'Create resource: %(name)s' % s_resource
             update_counter += 1
             dest.create_resource(data, files)
-        elif (cmp_filter(s_resource, d_resource, ['name', 'description', 'position', 'last_modified']) != 0):
+        elif (cmp_filter(s_resource, d_resource, ['name', 'description', 'position']) != 0):
             print 'Update resource: %(name)s' % s_resource
             data['id'] = d_resource.get('id')
             update_counter += 1
             dest.update_resource(data, files)
         # Delete downloaded file
-        os.remove(filename)
+        os.remove("%s/%s" % (source.temp_path, filename))
 
 
     # Delete unwanted resources
@@ -222,7 +222,8 @@ def sync_all(source, dest):
     for package in dest.list_packages():
         if package not in source_pckgs:
             print 'Deleting pkg: %s' % package
-            update_counter += dest.delete_package(package)
+            dest.delete_package(package)
+            update_counter += 1
     return update_counter
 
 
