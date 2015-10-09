@@ -22,6 +22,22 @@ class CkanApi:
         self.temp_path = temp_path
         self.headers = {'Authorization': self.key}
 
+    def list_organizations(self):
+        r = requests.get(self.url+'action/organization_list', headers=self.headers)
+        return r.json()['result']
+
+    def get_organization(self, id):
+        r = requests.get(self.url+'action/organization_show', params={'id': id}, headers=self.headers)
+        return r.json()
+
+    def create_organization(self, data):
+        r = requests.post(self.url+'action/organization_create', json=data, headers=self.headers)
+        return r.json()
+
+    def update_organization(self, data):
+        r = requests.post(self.url+'action/organization_update', json=data, headers=self.headers)
+        return r.json()
+
     def list_packages(self):
         r = requests.get(self.url+'action/package_list', headers=self.headers)
         return r.json()['result']
@@ -75,6 +91,42 @@ class CkanApi:
             for chunk in r.iter_content(4096):
                 fd.write(chunk)
 
+
+def sync_organization(organization, source, dest):
+    # How many changes were done.
+    update_counter = 0
+    s_org = source.get_organization(organization)['result']
+    if (dest.get_organization(organization)['success'] == False):
+        params = {
+                'display_name': s_org['display_name'],
+                'description': s_org['description'],
+                'name': s_org['name'],
+                'type': s_org['type'],
+                'state': s_org['state'],
+                'title': s_org['title'],
+                'approval_status': s_org['approval_status']
+                }
+        print 'Creating organization: %(name)s' % s_org
+        update_counter += 1
+        d_org = dest.create_organization(params)['result']
+    else:
+        d_org = dest.get_organization(organization)['result']
+    if (cmp_filter(s_org, d_org, ['title', 'display_name', 'description', 'state']) != 0):
+        params = {
+                'display_name': s_org['display_name'],
+                'description': s_org['description'],
+                'state': s_org['state'],
+                'title': s_org['title'],
+                'approval_status': s_org['approval_status']
+
+                }
+        d_org.update(params)
+        print 'Updating organization: %(name)s' % s_org
+        update_counter += 1
+        dest.update_organization(d_org)
+    return update_counter
+
+
 def sync_package(package, source, dest):
     # How many changes were done.
     update_counter = 0
@@ -86,6 +138,7 @@ def sync_package(package, source, dest):
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
                 'owner_org': s_pack['organization']['name'],
+                'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack['tags']],
                 'extras': [{'key': 'source', 'value': s_pack['id']}]
                 }
         print 'Creating package: %(name)s' % s_pack
@@ -154,15 +207,21 @@ def sync_package(package, source, dest):
 
 def sync_all(source, dest):
     update_counter = 0
-    # Delete packages that shouldn't be there
+
+    source_orgs = source.list_organizations()
+    for organization in source_orgs:
+        print 'Syncing org: %s' % organization 
+        update_counter += sync_organization(organization, source, dest)
+
     source_pckgs = source.list_packages()
     for package in source_pckgs:
-        print 'Syncing: %s' % package
+        print 'Syncing pkg: %s' % package
         update_counter += sync_package(package, source, dest)
 
+    # Delete packages that shouldn't be there
     for package in dest.list_packages():
         if package not in source_pckgs:
-            print 'Deleting: %s' % package
+            print 'Deleting pkg: %s' % package
             update_counter += dest.delete_package(package)
     return update_counter
 
@@ -210,6 +269,11 @@ if __name__ == '__main__':
         elif o in ('-h', '--help'):
             print_help()
             exit()
+    if not opts:
+        print_help()
+        exit(1)
+
+
 
     source = CkanApi(source_api, source_api_key, temp_path)
     dest = CkanApi(dest_api, dest_api_key, temp_path)
