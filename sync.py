@@ -4,16 +4,27 @@ import requests
 import json
 import os
 
+from urlparse import urlparse
+
 # Command line arguments follow the GNU conventions.
 from getopt import gnu_getopt
 from sys import argv, exit
 
+def list_of_dicts_to_dict(lst, key, flt):
+    return {sd[key]: {k: v for k, v in sd.iteritems() if k in flt} for sd in lst}
 
-def cmp_filter(dict1, dict2, filter):
-    """ Returns dicts cmp() comparing only keys in filter """
-    dict1 = {k:dict1[k] for k in dict1 if k in filter}
-    dict2 = {k:dict2[k] for k in dict2 if k in filter}
-    return cmp(dict1, dict2)
+def lists_of_dicts_equal(l1, l2, key, flt):
+    d1 = list_of_dicts_to_dict(l1, key, flt)
+    d2 = list_of_dicts_to_dict(l2, key, flt)
+    return d1 == d2
+
+def filter_dict(d, flt):
+    return {k:d[k] for k in d if k in flt}
+
+def dicts_equal(d1, d2, flt):
+    d1 = filter_dict(d1, flt)
+    d2 = filter_dict(d2, flt)
+    return d1 == d2
 
 class CkanApi:
     def __init__(self, url, key, temp_path):
@@ -91,6 +102,12 @@ class CkanApi:
             for chunk in r.iter_content(4096):
                 fd.write(chunk)
 
+    def empty_trash(self):
+        parsed_uri = urlparse(self.url)
+        trash_uri = '{uri.scheme}://{uri.netloc}/ckan-admin/trash'.format(uri=parsed_uri)
+        r = requests.get(trash_uri, params={'purge-packages': 'purge'}, headers=self.headers)
+
+
 
 def sync_organization(organization, source, dest):
     # How many changes were done.
@@ -104,22 +121,32 @@ def sync_organization(organization, source, dest):
                 'type': s_org['type'],
                 'state': s_org['state'],
                 'title': s_org['title'],
-                'approval_status': s_org['approval_status']
+                'approval_status': s_org['approval_status'],
+                'extras': []
                 }
+        for extra in s_org['extras']:
+            item = filter_dict(extra, ['value', 'state', 'key'])
+            params['extras'].append(item)
+
         print 'Creating organization: %(name)s' % s_org
         update_counter += 1
         d_org = dest.create_organization(params)['result']
     else:
         d_org = dest.get_organization(organization)['result']
-    if (cmp_filter(s_org, d_org, ['title', 'display_name', 'description', 'state']) != 0):
+    if (not dicts_equal(s_org, d_org, ['title', 'display_name', 'description', 'state'])
+        or not lists_of_dicts_equal(s_org['extras'], d_org['extras'], 'key', ['value', 'state', 'key'])):
         params = {
                 'display_name': s_org['display_name'],
                 'description': s_org['description'],
                 'state': s_org['state'],
                 'title': s_org['title'],
-                'approval_status': s_org['approval_status']
-
+                'approval_status': s_org['approval_status'],
+                'extras': []
                 }
+        for extra in s_org['extras']:
+            item = filter_dict(extra, ['value', 'state', 'key'])
+            params['extras'].append(item)
+
         d_org.update(params)
         print 'Updating organization: %(name)s' % s_org
         update_counter += 1
@@ -139,20 +166,30 @@ def sync_package(package, source, dest):
                 'notes': s_pack['notes'],
                 'owner_org': s_pack['organization']['name'],
                 'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack['tags']],
-                'extras': [{'key': 'source', 'value': s_pack['id']}]
+                'extras': []
                 }
+        for extra in s_pack['extras']:
+            item = filter_dict(extra, ['value', 'key'])
+            params['extras'].append(item)
+
         print 'Creating package: %(name)s' % s_pack
         update_counter += 1
         d_pack = dest.create_package(params)['result']
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (cmp_filter(s_pack, d_pack, ['title', 'notes']) != 0):
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes'])
+        or not lists_of_dicts_equal(s_pack['extras'], d_pack['extras'], 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
                 'owner_org': s_pack['organization']['name'],
+                'extras': []
                 }
+        for extra in s_pack['extras']:
+            item = filter_dict(extra, ['value', 'key'])
+            params['extras'].append(item)
+
         d_pack.update(params)
         print 'Updating package: %(name)s' % s_pack
         update_counter += 1
@@ -185,7 +222,7 @@ def sync_package(package, source, dest):
             print 'Create resource: %(name)s' % s_resource
             update_counter += 1
             dest.create_resource(data, files)
-        elif (cmp_filter(s_resource, d_resource, ['name', 'description', 'position']) != 0):
+        elif (not dicts_equal(s_resource, d_resource, ['name', 'description', 'position'])):
             print 'Update resource: %(name)s' % s_resource
             data['id'] = d_resource.get('id')
             update_counter += 1
@@ -277,7 +314,9 @@ if __name__ == '__main__':
 
 
     source = CkanApi(source_api, source_api_key, temp_path)
+    source.empty_trash()
     dest = CkanApi(dest_api, dest_api_key, temp_path)
+    dest.empty_trash()
     if sync_all(source, dest) > 0:
         exit(1)
     else:
