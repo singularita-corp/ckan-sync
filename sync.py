@@ -43,10 +43,12 @@ class CkanApi:
 
     def create_organization(self, data):
         r = requests.post(self.url+'action/organization_create', json=data, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
     def update_organization(self, data):
         r = requests.post(self.url+'action/organization_update', json=data, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
     def list_packages(self):
@@ -66,34 +68,50 @@ class CkanApi:
 
     def create_package(self, data):
         r = requests.post(self.url+'action/package_create', json=data, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
     def update_package(self, data):
         r = requests.post(self.url+'action/package_update', json=data, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
     def delete_package(self, name):
         params = {'id': name}
         r = requests.post(self.url+'action/package_delete', json=params, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
-    def create_resource(self, data, files):
-        r = requests.post(self.url+'action/resource_create',
-                data=data,
-                files=files,
-                headers=self.headers)
-        return r.text
+    def purge_package(self, name):
+        params = {'id': name}
+        r = requests.post(self.url+'action/dataset_purge', json=params, headers=self.headers)
+        assert r.json().get('success')
+        return r.json()
 
-    def update_resource(self, data, files):
-        r = requests.post(self.url+'action/resource_update',
-                data=data,
-                files=files,
-                headers=self.headers)
-        return r.text
+    def create_resource(self, data, files, json=False):
+        datakey = 'json' if json else 'data'
+        r = requests.post(self.url + 'action/resource_create', **{
+            datakey: data,
+            'files': files,
+            'headers': self.headers,
+        })
+        assert r.json().get('success')
+        return r.json()
+
+    def update_resource(self, data, files, json=False):
+        datakey = 'json' if json else 'data'
+        r = requests.post(self.url + 'action/resource_update', **{
+            datakey: data,
+            'files': files,
+            'headers': self.headers,
+        })
+        assert r.json().get('success')
+        return r.json()
 
     def delete_resource(self, id):
         params = {'id': id}
         r = requests.post(self.url+'action/resource_delete', json=params, headers=self.headers)
+        assert r.json().get('success')
         return r.json()
 
     def download(self, url, filename):
@@ -128,7 +146,7 @@ def sync_organization(organization, source, dest):
             item = filter_dict(extra, ['value', 'state', 'key'])
             params['extras'].append(item)
 
-        print 'Creating organization: %(name)s' % s_org
+        print 'Creating organization: %(name)r' % s_org
         update_counter += 1
         d_org = dest.create_organization(params)['result']
     else:
@@ -148,7 +166,7 @@ def sync_organization(organization, source, dest):
             params['extras'].append(item)
 
         d_org.update(params)
-        print 'Updating organization: %(name)s' % s_org
+        print 'Updating organization: %(name)r' % s_org
         update_counter += 1
         dest.update_organization(d_org)
     return update_counter
@@ -165,25 +183,49 @@ def sync_package(package, source, dest):
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
                 'owner_org': s_pack['organization']['name'],
-                'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack['tags']],
+                'ruian_code': s_pack.get('ruian_code'),
+                'ruian_type': s_pack.get('ruian_type'),
+                'spatial_uri': s_pack.get('spatial_uri'),
+                'maintainer': s_pack.get('maintainer'),
+                'maintainer_email': s_pack.get('maintainer_email'),
+                'frequency': s_pack.get('frequency'),
+                'author': s_pack.get('author'),
+                'author_email': s_pack.get('author_email'),
+                'temporal_start': s_pack.get('temporal_start'),
+                'temporal_end': s_pack.get('temporal_end'),
+                'publisher_name': s_pack.get('publisher_name'),
+                'publisher_uri': s_pack.get('publisher_uri'),
+                'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack.get('tags')],
                 'extras': []
                 }
         for extra in s_pack['extras']:
             item = filter_dict(extra, ['value', 'key'])
             params['extras'].append(item)
 
-        print 'Creating package: %(name)s' % s_pack
+        print 'Creating package: %(name)r' % s_pack
         update_counter += 1
         d_pack = dest.create_package(params)['result']
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (not dicts_equal(s_pack, d_pack, ['title', 'notes'])
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'temporal_start', 'temporal_end'])
         or not lists_of_dicts_equal(s_pack['extras'], d_pack['extras'], 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
                 'owner_org': s_pack['organization']['name'],
+                'ruian_code': s_pack.get('ruian_code'),
+                'ruian_type': s_pack.get('ruian_type'),
+                'spatial_uri': s_pack.get('spatial_uri'),
+                'maintainer': s_pack.get('maintainer'),
+                'maintainer_email': s_pack.get('maintainer_email'),
+                'frequency': s_pack.get('frequency'),
+                'author': s_pack.get('author'),
+                'author_email': s_pack.get('author_email'),
+                'temporal_start': s_pack.get('temporal_start'),
+                'temporal_end': s_pack.get('temporal_end'),
+                'publisher_name': s_pack.get('publisher_name'),
+                'publisher_uri': s_pack.get('publisher_uri'),
                 'extras': []
                 }
         for extra in s_pack['extras']:
@@ -191,7 +233,7 @@ def sync_package(package, source, dest):
             params['extras'].append(item)
 
         d_pack.update(params)
-        print 'Updating package: %(name)s' % s_pack
+        print 'Updating package: %(name)r' % s_pack
         update_counter += 1
         dest.update_package(d_pack)
 
@@ -204,31 +246,49 @@ def sync_package(package, source, dest):
             d_resource = []
 
         # Download resource
-        filename = '%s-%s'%(s_resource['id'], os.path.basename(s_resource['url']))
-        source.download(s_resource['url'], filename)
-        # Reupload it
-        data = {'package_id': d_pack['id'],
-                'name': s_resource['name'],
-                'format': s_resource['format'],
-                'hash': s_resource['id'],
-                'position': s_resource['position'],
-                'description': s_resource['description'],
-                'last_modified': s_resource['last_modified'],
-                'url': ''
-                }
-        files = [('upload', file("%s/%s" % (source.temp_path, filename)))]
+        filename = '%s-%s' % (s_resource['id'], os.path.basename(s_resource['url']))
 
-        if (d_result['result']['count'] == 0):
-            print 'Create resource: %(name)s' % s_resource
+        if 'praha.eu' in s_resource['url']:
+            source.download(s_resource['url'], filename)
+
+            # Reupload it
+            data = {'package_id': d_pack['id'],
+                    'name': s_resource['name'],
+                    'format': s_resource['format'],
+                    'hash': s_resource['id'],
+                    'position': s_resource['position'],
+                    'description': s_resource['description'],
+                    'last_modified': s_resource['last_modified'],
+                    'url': ''
+                    }
+            files = [('upload', file("%s/%s" % (source.temp_path, filename)))]
+            s_json = False
+        else:
+            data = {'package_id': d_pack['id'],
+                    'name': s_resource['name'],
+                    'format': s_resource['format'],
+                    'hash': s_resource['id'],
+                    'position': s_resource['position'],
+                    'description': s_resource['description'],
+                    'last_modified': s_resource['last_modified'],
+                    'url': s_resource['url']
+                    }
+            files = []
+            s_json = True
+
+        if d_result['result']['count'] == 0:
+            print 'Create resource: %(name)r' % s_resource
             update_counter += 1
-            dest.create_resource(data, files)
-        elif (not dicts_equal(s_resource, d_resource, ['name', 'description', 'position'])):
-            print 'Update resource: %(name)s' % s_resource
+            dest.create_resource(data, files, json=s_json)
+        elif not dicts_equal(s_resource, d_resource, ['name', 'description', 'position']):
+            print 'Update resource: %(name)r' % s_resource
             data['id'] = d_resource.get('id')
             update_counter += 1
-            dest.update_resource(data, files)
-        # Delete downloaded file
-        os.remove("%s/%s" % (source.temp_path, filename))
+            dest.update_resource(data, files, json=s_json)
+
+        if 'praha.eu' in s_resource['url']:
+            # Delete downloaded file
+            os.remove("%s/%s" % (source.temp_path, filename))
 
 
     # Delete unwanted resources
@@ -236,7 +296,7 @@ def sync_package(package, source, dest):
     d_hashes = {v['hash']: v for v in d_pack['resources']}
     for d_hash, res in d_hashes.iteritems():
         if d_hash not in s_ids:
-            print 'Delete resource: %(name)s' % res
+            print 'Delete resource: %(name)r' % res
             update_counter += 1
             dest.delete_resource(res['id'])
     return update_counter
@@ -247,19 +307,19 @@ def sync_all(source, dest):
 
     source_orgs = source.list_organizations()
     for organization in source_orgs:
-        print 'Syncing org: %s' % organization 
+        print 'Syncing org: %r' % organization 
         update_counter += sync_organization(organization, source, dest)
 
     source_pckgs = source.list_packages()
     for package in source_pckgs:
-        print 'Syncing pkg: %s' % package
+        print 'Syncing pkg: %r' % package
         update_counter += sync_package(package, source, dest)
 
     # Delete packages that shouldn't be there
     for package in dest.list_packages():
         if package not in source_pckgs:
-            print 'Deleting pkg: %s' % package
-            dest.delete_package(package)
+            print 'Deleting pkg: %r' % package
+            dest.purge_package(package)
             update_counter += 1
     return update_counter
 
@@ -312,12 +372,22 @@ if __name__ == '__main__':
         exit(1)
 
 
-
+    # Define source and destination
     source = CkanApi(source_api, source_api_key, temp_path)
-    source.empty_trash()
     dest = CkanApi(dest_api, dest_api_key, temp_path)
+
+    # Empty trash before sync
+    source.empty_trash()
     dest.empty_trash()
-    if sync_all(source, dest) > 0:
+
+    # Do the sync
+    changes = sync_all(source, dest)
+
+    # Empty trash after sync
+    source.empty_trash()
+    dest.empty_trash()
+
+    if changes > 0:
         exit(1)
     else:
         exit(0)
