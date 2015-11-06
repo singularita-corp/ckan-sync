@@ -142,7 +142,7 @@ def sync_organization(organization, source, dest):
                 'approval_status': s_org['approval_status'],
                 'extras': []
                 }
-        for extra in s_org['extras']:
+        for extra in s_org.get('extras', []):
             item = filter_dict(extra, ['value', 'state', 'key'])
             params['extras'].append(item)
 
@@ -161,7 +161,7 @@ def sync_organization(organization, source, dest):
                 'approval_status': s_org['approval_status'],
                 'extras': []
                 }
-        for extra in s_org['extras']:
+        for extra in s_org.get('extras', []):
             item = filter_dict(extra, ['value', 'state', 'key'])
             params['extras'].append(item)
 
@@ -198,7 +198,7 @@ def sync_package(package, source, dest):
                 'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack.get('tags')],
                 'extras': []
                 }
-        for extra in s_pack['extras']:
+        for extra in s_pack.get('extras', []):
             item = filter_dict(extra, ['value', 'key'])
             params['extras'].append(item)
 
@@ -209,7 +209,7 @@ def sync_package(package, source, dest):
         d_pack = dest.get_package(package)['result']
 
     if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'temporal_start', 'temporal_end'])
-        or not lists_of_dicts_equal(s_pack['extras'], d_pack['extras'], 'key', ['value', 'key'])):
+        or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
@@ -228,7 +228,7 @@ def sync_package(package, source, dest):
                 'publisher_uri': s_pack.get('publisher_uri'),
                 'extras': []
                 }
-        for extra in s_pack['extras']:
+        for extra in s_pack.get('extras', []):
             item = filter_dict(extra, ['value', 'key'])
             params['extras'].append(item)
 
