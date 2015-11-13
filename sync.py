@@ -188,6 +188,9 @@ def sync_package(package, source, dest):
                 'spatial_uri': s_pack.get('spatial_uri'),
                 'maintainer': s_pack.get('maintainer'),
                 'maintainer_email': s_pack.get('maintainer_email'),
+                'license_title': s_pack.get('license_title'),
+                'license_id': s_pack.get('license_id'),
+                'license_url': s_pack.get('license_url'),
                 'frequency': s_pack.get('frequency'),
                 'author': s_pack.get('author'),
                 'author_email': s_pack.get('author_email'),
@@ -208,7 +211,7 @@ def sync_package(package, source, dest):
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'temporal_start', 'temporal_end'])
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
         or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
@@ -219,6 +222,9 @@ def sync_package(package, source, dest):
                 'spatial_uri': s_pack.get('spatial_uri'),
                 'maintainer': s_pack.get('maintainer'),
                 'maintainer_email': s_pack.get('maintainer_email'),
+                'license_title': s_pack.get('license_title'),
+                'license_id': s_pack.get('license_id'),
+                'license_url': s_pack.get('license_url'),
                 'frequency': s_pack.get('frequency'),
                 'author': s_pack.get('author'),
                 'author_email': s_pack.get('author_email'),
