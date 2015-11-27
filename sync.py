@@ -26,6 +26,13 @@ def dicts_equal(d1, d2, flt):
     d2 = filter_dict(d2, flt)
     return d1 == d2
 
+def parse_hash(value):
+    try:
+        return value.split(':',1)
+    except ValueError:
+        return [value, '']
+
+
 class CkanApi:
     def __init__(self, url, key, temp_path):
         self.url = url
@@ -211,8 +218,10 @@ def sync_package(package, source, dest):
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url','temporal_start', 'temporal_end'])
         or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
+        print filter_dict(s_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
+        print filter_dict(d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
@@ -261,7 +270,7 @@ def sync_package(package, source, dest):
             data = {'package_id': d_pack['id'],
                     'name': s_resource['name'],
                     'format': s_resource['format'],
-                    'hash': s_resource['id'],
+                    'hash': '%s:%s' % (s_resource['id'], s_resource['last_modified']) ,
                     'position': s_resource['position'],
                     'description': s_resource['description'],
                     'last_modified': s_resource['last_modified'],
@@ -273,7 +282,7 @@ def sync_package(package, source, dest):
             data = {'package_id': d_pack['id'],
                     'name': s_resource['name'],
                     'format': s_resource['format'],
-                    'hash': s_resource['id'],
+                    'hash': '%s:%s' % (s_resource['id'], s_resource['last_modified']) ,
                     'position': s_resource['position'],
                     'description': s_resource['description'],
                     'last_modified': s_resource['last_modified'],
@@ -286,11 +295,13 @@ def sync_package(package, source, dest):
             print 'Create resource: %(name)r' % s_resource
             update_counter += 1
             dest.create_resource(data, files, json=s_json)
-        elif not dicts_equal(s_resource, d_resource, ['name', 'description', 'position']):
-            print 'Update resource: %(name)r' % s_resource
-            data['id'] = d_resource.get('id')
-            update_counter += 1
-            dest.update_resource(data, files, json=s_json)
+        elif not dicts_equal(s_resource, d_resource, ['name', 'description', 'position', 'last_modified']):
+            s_id, last_modified = parse_hash(d_resource['hash'])
+            if last_modified != s_resource['last_modified']:
+                print 'Update resource: %(name)r' % s_resource
+                data['id'] = d_resource.get('id')
+                update_counter += 1
+                dest.update_resource(data, files, json=s_json)
 
         if 'praha.eu' in s_resource['url']:
             # Delete downloaded file
@@ -299,7 +310,7 @@ def sync_package(package, source, dest):
 
     # Delete unwanted resources
     s_ids = [v['id'] for v in s_pack['resources']]
-    d_hashes = {v['hash']: v for v in d_pack['resources']}
+    d_hashes = {parse_hash(v['hash'])[0]: v for v in d_pack['resources']}
     for d_hash, res in d_hashes.iteritems():
         if d_hash not in s_ids:
             print 'Delete resource: %(name)r' % res
