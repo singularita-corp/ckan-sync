@@ -220,8 +220,6 @@ def sync_package(package, source, dest):
 
     if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url','temporal_start', 'temporal_end'])
         or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
-        print filter_dict(s_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
-        print filter_dict(d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url', 'license_title','temporal_start', 'temporal_end'])
         params = {
                 'title': s_pack['title'],
                 'notes': s_pack['notes'],
