@@ -198,6 +198,7 @@ def sync_package(package, source, dest):
                 'license_title': s_pack.get('license_title'),
                 'license_id': s_pack.get('license_id'),
                 'license_url': s_pack.get('license_url'),
+                'license_link': s_pack.get('license_link'),
                 'frequency': s_pack.get('frequency'),
                 'author': s_pack.get('author'),
                 'author_email': s_pack.get('author_email'),
@@ -205,6 +206,8 @@ def sync_package(package, source, dest):
                 'temporal_end': s_pack.get('temporal_end'),
                 'publisher_name': s_pack.get('publisher_name'),
                 'publisher_uri': s_pack.get('publisher_uri'),
+                'schema': s_pack.get('schema'),
+                'theme': s_pack.get('theme'),
                 'tags': [{'state': tag['state'], 'display_name': tag['display_name'], 'name': tag['name']} for tag in s_pack.get('tags')],
                 'extras': []
                 }
@@ -218,7 +221,7 @@ def sync_package(package, source, dest):
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url','temporal_start', 'temporal_end'])
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url','temporal_start', 'temporal_end', 'schema', 'license_id', 'theme'])
         or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
@@ -232,6 +235,7 @@ def sync_package(package, source, dest):
                 'license_title': s_pack.get('license_title'),
                 'license_id': s_pack.get('license_id'),
                 'license_url': s_pack.get('license_url'),
+                'license_link': s_pack.get('license_link'),
                 'frequency': s_pack.get('frequency'),
                 'author': s_pack.get('author'),
                 'author_email': s_pack.get('author_email'),
@@ -239,6 +243,8 @@ def sync_package(package, source, dest):
                 'temporal_end': s_pack.get('temporal_end'),
                 'publisher_name': s_pack.get('publisher_name'),
                 'publisher_uri': s_pack.get('publisher_uri'),
+                'schema': s_pack.get('schema'),
+                'theme': s_pack.get('theme'),
                 'extras': []
                 }
         for extra in s_pack.get('extras', []):
