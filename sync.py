@@ -221,7 +221,7 @@ def sync_package(package, source, dest):
     else:
         d_pack = dest.get_package(package)['result']
 
-    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'maintainer', 'author', 'publisher_name', 'maintainer_email', 'license_id', 'license_url','temporal_start', 'temporal_end', 'schema', 'license_id', 'theme'])
+    if (not dicts_equal(s_pack, d_pack, ['title', 'notes', 'ruian_code', 'ruian_type', 'spatial_uri', 'maintainer', 'maintainer_email', 'author', 'author_email', 'publisher_name', 'license_url', 'licence_title', 'licence_link', 'temporal_start', 'temporal_end', 'schema', 'license_id', 'theme', 'frequency', 'publisher_uri'])
         or not lists_of_dicts_equal(s_pack.get('extras', {}), d_pack.get('extras', {}), 'key', ['value', 'key'])):
         params = {
                 'title': s_pack['title'],
