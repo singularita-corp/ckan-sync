@@ -299,7 +299,7 @@ def sync_package(package, source, dest):
             print 'Create resource: %(name)r' % s_resource
             update_counter += 1
             dest.create_resource(data, files, json=s_json)
-        elif not dicts_equal(s_resource, d_resource, ['name', 'description', 'position', 'last_modified']):
+        elif not dicts_equal(s_resource, d_resource, ['name', 'description', 'last_modified']):
             s_id, last_modified = parse_hash(d_resource['hash'])
             if last_modified != s_resource['last_modified']:
                 print 'Update resource: %(name)r' % s_resource
