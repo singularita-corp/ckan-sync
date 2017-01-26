@@ -1,10 +1,10 @@
 #!/usr/bin/python -tt
 
-import requests
 import json
 import os
 
 from urlparse import urlparse
+from requests import Session
 
 # Command line arguments follow the GNU conventions.
 from getopt import gnu_getopt
@@ -39,65 +39,66 @@ class CkanApi:
         self.key = key
         self.temp_path = temp_path
         self.headers = {'Authorization': self.key}
+        self.s = Session()
 
     def list_organizations(self):
-        r = requests.get(self.url+'action/organization_list', headers=self.headers)
+        r = self.s.get(self.url+'action/organization_list', headers=self.headers)
         return r.json()['result']
 
     def get_organization(self, id):
-        r = requests.get(self.url+'action/organization_show', params={'id': id}, headers=self.headers)
+        r = self.s.get(self.url+'action/organization_show', params={'id': id}, headers=self.headers)
         return r.json()
 
     def create_organization(self, data):
-        r = requests.post(self.url+'action/organization_create', json=data, headers=self.headers)
+        r = self.s.post(self.url+'action/organization_create', json=data, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def update_organization(self, data):
-        r = requests.post(self.url+'action/organization_update', json=data, headers=self.headers)
+        r = self.s.post(self.url+'action/organization_update', json=data, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def list_packages(self):
-        r = requests.get(self.url+'action/package_list', headers=self.headers)
+        r = self.s.get(self.url+'action/package_list', headers=self.headers)
         return r.json()['result']
 
     def get_package(self, id):
-        r = requests.get(self.url+'action/package_show', params={'id': id}, headers=self.headers)
+        r = self.s.get(self.url+'action/package_show', params={'id': id}, headers=self.headers)
         return r.json()
 
     def get_resources(self, package_id):
         return self.get_package(package_id)['result'].get('resources')
 
     def get_resource_by_hash(self, hash):
-        r = requests.get(self.url+'action/resource_search', params={'query': 'hash:'+hash}, headers=self.headers)
+        r = self.s.get(self.url+'action/resource_search', params={'query': 'hash:'+hash}, headers=self.headers)
         return r.json()
 
     def create_package(self, data):
-        r = requests.post(self.url+'action/package_create', json=data, headers=self.headers)
+        r = self.s.post(self.url+'action/package_create', json=data, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def update_package(self, data):
-        r = requests.post(self.url+'action/package_update', json=data, headers=self.headers)
+        r = self.s.post(self.url+'action/package_update', json=data, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def delete_package(self, name):
         params = {'id': name}
-        r = requests.post(self.url+'action/package_delete', json=params, headers=self.headers)
+        r = self.s.post(self.url+'action/package_delete', json=params, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def purge_package(self, name):
         params = {'id': name}
-        r = requests.post(self.url+'action/dataset_purge', json=params, headers=self.headers)
+        r = self.s.post(self.url+'action/dataset_purge', json=params, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def create_resource(self, data, files, json=False):
         datakey = 'json' if json else 'data'
-        r = requests.post(self.url + 'action/resource_create', **{
+        r = self.s.post(self.url + 'action/resource_create', **{
             datakey: data,
             'files': files,
             'headers': self.headers,
@@ -107,7 +108,7 @@ class CkanApi:
 
     def update_resource(self, data, files, json=False):
         datakey = 'json' if json else 'data'
-        r = requests.post(self.url + 'action/resource_update', **{
+        r = self.s.post(self.url + 'action/resource_update', **{
             datakey: data,
             'files': files,
             'headers': self.headers,
@@ -117,12 +118,12 @@ class CkanApi:
 
     def delete_resource(self, id):
         params = {'id': id}
-        r = requests.post(self.url+'action/resource_delete', json=params, headers=self.headers)
+        r = self.s.post(self.url+'action/resource_delete', json=params, headers=self.headers)
         assert r.json().get('success')
         return r.json()
 
     def download(self, url, filename):
-        r = requests.get(url)
+        r = self.s.get(url)
         with open('%s/%s' % (self.temp_path, filename), 'wb') as fd:
             for chunk in r.iter_content(4096):
                 fd.write(chunk)
@@ -130,7 +131,7 @@ class CkanApi:
     def empty_trash(self):
         parsed_uri = urlparse(self.url)
         trash_uri = '{uri.scheme}://{uri.netloc}/ckan-admin/trash'.format(uri=parsed_uri)
-        r = requests.get(trash_uri, params={'purge-packages': 'purge'}, headers=self.headers)
+        r = self.s.get(trash_uri, params={'purge-packages': 'purge'}, headers=self.headers)
 
 
 
