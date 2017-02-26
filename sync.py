@@ -9,8 +9,8 @@ import os
 import re
 import requests
 import sys
+import time
 
-from textwrap import dedent
 from urllib.parse import urlparse
 
 
@@ -60,6 +60,7 @@ class PackageMetadata(dict):
             'ruian_type',
             'schema',
             'spatial_uri',
+            'state',
             'temporal_start',
             'temporal_end',
             'theme',
@@ -77,6 +78,7 @@ class PackageMetadata(dict):
             'tags': sorted(tags, key=lambda x: x['display_name']),
             'owner_org': package_dict['organization']['name'],
         })
+
 
 class Resource(dict):
     """Dict representing CKAN resource.
@@ -130,6 +132,8 @@ class Resource(dict):
 
 
 class CkanApi:
+    """CKAN API wrapper.
+    """
     def __init__(self, api_url, api_key=None):
         self.api_url = api_url
         self.api_key = api_key
@@ -140,8 +144,8 @@ class CkanApi:
 
     def api_action(self, action, **kwargs):
         url = '/'.join([self.api_url.strip('/'), 'action', action])
-        kwargs.update(headers = {'Authorization': self.api_key})
-        if any(key in kwargs for key in ('json', 'data')):
+        kwargs.update(headers={'Authorization': self.api_key})
+        if ('json' in kwargs) or ('data' in kwargs):
             r = self.session.post(url=url, **kwargs)
             r.raise_for_status()
             if not r.json().get('success'):
@@ -149,6 +153,8 @@ class CkanApi:
         else:
             r = self.session.get(url=url, **kwargs)
         return r.json()
+
+    # Organizations
 
     def list_organizations(self):
         return self.api_action('organization_list').get('result')
@@ -167,6 +173,8 @@ class CkanApi:
             org_dict['id'] = org_dict['name']
         return self.api_action('organization_patch', json=org_dict)
 
+    # Packages
+
     def list_packages(self):
         return self.api_action('package_list').get('result')
 
@@ -176,6 +184,8 @@ class CkanApi:
 
     def create_package(self, package_dict):
         logging.info('Creating package %(name)s' % package_dict)
+        if 'owner_org' not in package_dict.keys():
+            raise ValueError('Package must contain "owner_org" key')
         return self.api_action('package_create', json=package_dict)
 
     def patch_package(self, package_dict):
@@ -184,9 +194,11 @@ class CkanApi:
             package_dict['id'] = package_dict['name']
         return self.api_action('package_patch', json=package_dict)
 
-    def delete_package(self, package_name):
-        logging.info('Deleting package %s', package_name)
-        return self.api_action('package_delete', json={'id': package_name})
+    def purge_package(self, package_name):
+        logging.info('Purging package %s', package_name)
+        return self.api_action('dataset_purge', json={'id': package_name})
+
+    # Resources
 
     def create_resource(self, resource_dict, files=None):
         logging.info('Creating resource %(name)s' % resource_dict)
@@ -205,16 +217,25 @@ class CkanApi:
         logging.info('Deleting resource %s', resource_id)
         return self.api_action('resource_delete', json={'id': resource_id})
 
+    # Revisions
+
     def get_revision(self, revid):
         return self.api_action(
             'revision_show', params={'id': revid}).get('result')
 
-    def collect_revisions(self, since_timestamp):
-        logging.info('Collecting revisions since %s', since_timestamp)
+    def collect_revisions(self, since_time=None, since_id=None):
+        # CKAN behavior: if both params given, only since_id is used
+        if not (since_time or since_id):
+            raise ValueError('Cannot collect revisions'
+             ' - missing required param (since_id or since_time)')
+        logging.info('Collecting revisions since %s', since_id or since_time)
         revisions = []
-        params = {'sort': 'time_asc', 'since_time': since_timestamp}
+        params = {
+            'sort': 'time_asc',
+            'since_id': since_id,
+            'since_time': since_time}
         batch = self.api_action('revision_list', params=params)['result']
-        while batch:
+        while len(batch) > 0:
             revisions.extend(batch)
             params = {'sort': 'time_asc', 'since_id': batch[-1]}
             batch = self.api_action('revision_list', params=params)['result']
@@ -222,7 +243,7 @@ class CkanApi:
         return revisions
 
     def collect_changes_from_revisions(self, revision_list):
-        '''Collects changes of both packages and organizations (including
+        '''Collects changes of both organizations and packages (including
         deletions), but needs to check every revision, hence suitable only
         for short term checks/small number of revisions.
         '''
@@ -238,60 +259,57 @@ class CkanApi:
             orgs, packages)
         return (orgs, packages)
 
-    def collect_changed_packages(self, since_timestamp):
+    def collect_changed_packages(self, since_time):
         '''Collects packages created/updated since given time,
         without deleted ones.
         Returns list of full package dicts as returned by CKAN API.
         '''
         def convert_time(timestamp):
-            dateformat = '%Y-%m-%dT%H:%M:%S.%f'
-            return datetime.datetime.strptime(timestamp, dateformat)
+            time_tuple = re.split('[^\d]+', timestamp)
+            return datetime.datetime(*map(int, time_tuple))
 
-        def filter_changed_packages(package_list, since_time):
+        def filter_changed_packages(package_list, since_datetime):
             return [pack for pack in package_list
-                if (convert_time(pack['metadata_modified']) > since_time)]
+                if (convert_time(pack['metadata_modified']) > since_datetime)]
 
-        logging.info('Collecting packages changed since %s', since_timestamp)
+        logging.info('Collecting packages changed since %s', since_time)
         changed_packages = []
         action = 'current_package_list_with_resources'
         limit, offset = 20, 0
-        since_time = convert_time(since_timestamp)
+        since_datetime = convert_time(since_time)
         batch = self.api_action(
             action, params={'limit': limit})['result']
-        packs = filter_changed_packages(batch, since_time)
+        packs = filter_changed_packages(batch, since_datetime)
         changed_packages.extend(packs)
         while len(packs) == limit:
             offset += limit
             batch = self.api_action(
                 action, params={'limit': limit, 'offset': offset})['result']
-            packs = filter_changed_packages(batch, since_time)
+            packs = filter_changed_packages(batch, since_datetime)
             changed_packages.extend(packs)
         logging.info('Found %s changed packages', len(changed_packages))
         return changed_packages
+
 
     def empty_trash(self):
         parsed_uri = urlparse(self.api_url)
         trash_uri = '{uri.scheme}://{uri.netloc}/ckan-admin/trash'.format(
             uri=parsed_uri)
         res = requests.get(
-            trash_uri, params={'purge-packages': 'purge'},
+            trash_uri,
+            params={'purge-packages': 'purge'},
             headers = {'Authorization': self.api_key})
 
 
 class CkanSync:
-    def __init__(self, source, target, since_time=None, temp_path=None):
+    def __init__(self, source, target, since_id=None, since_time=None, temp_path=None):
         self.source = source
         self.target = target
+        self.since_id = since_id
         self.since_time = since_time
         self.temp_path = temp_path
 
-    def download_file(self, url, filename):
-        location = '%s/%s' % (self.temp_path, filename)
-        r = requests.get(url)
-        with open(location, 'wb') as fd:
-            for chunk in r.iter_content(4096):
-                fd.write(chunk)
-        return location
+    # Synchronization of organizations, packages & resources
 
     def sync_org(self, org_name):   # todo sync logos via image_upload
         logging.info('Syncing organization %s', org_name)
@@ -322,14 +340,18 @@ class CkanSync:
                 self.target.create_package(s_package_meta)
             else:
                 if s_package_meta != PackageMetadata(t_pack):
-                    self.target.patch_package(s_package_meta)
+                    if s_package_meta['state'] == 'deleted':
+                        self.target.purge_package(package_name)
+                        return
+                    else:
+                        self.target.patch_package(s_package_meta)
             # resources
             s_resources = s_pack.get('resources', [])
             t_resources = t_pack.get('resources', []) if t_pack else []
             self.sync_package_resources(s_resources, t_resources, package_name)
         else:   # package not found in source CKAN
             if t_pack:
-                self.target.delete_package(package_name)
+                self.target.purge_package(package_name)
             else:
                 logging.warning(
                     'Package %s not found in either repo; doing nothing',
@@ -377,18 +399,31 @@ class CkanSync:
         for t in t_resources_by_oid.values():
             self.target.delete_resource(t['id'])
 
+    def download_file(self, url, filename):
+        location = '%s/%s' % (self.temp_path, filename)
+        r = requests.get(url)
+        with open(location, 'wb') as fd:
+            for chunk in r.iter_content(4096):
+                fd.write(chunk)
+        return location
 
-    def full_sync(self):
+    def sync_orgs_and_packages(self, orgs, packages):
+        for org in orgs:
+            self.sync_org(org)
+        for package in packages:
+            self.sync_package(package)
+
+    # Full/partial synchronization of CKAN instances
+
+    def sync_full(self):
         logging.info(
             'Started full sync from %s to %s', self.source, self.target)
-        for organization in self.source.list_organizations():
-            self.sync_org(organization)
+        source_orgs = self.source.list_organizations()
         source_packages = self.source.list_packages()
-        for package in source_packages:
-            self.sync_package(package)
+        self.sync_orgs_and_packages(source_orgs, source_packages)
         for package in self.target.list_packages():
             if package not in source_packages:
-                self.target.delete_package(package)
+                self.target.purge_package(package)
         logging.info('Full sync completed')
 
     def sync_packages_only(self):
@@ -398,81 +433,107 @@ class CkanSync:
             self.sync_package(package)
         to_delete = set(self.target.list_packages()) - set(self.source.list_packages())
         for package in to_delete:
-            self.target.delete_package(package)
+            self.target.purge_package(package)
         logging.info('Packages sync completed')
 
-    def sync(self, only_packages=False):
+    def sync(self):
         logging.info('Started sync from %s to %s', self.source, self.target)
-        if not self.since_time:
-            return self.full_sync()
-        if only_packages:
-            return self.sync_packages_only()
-        revisions = self.source.collect_revisions(self.since_time)
+        if not (self.since_id or self.since_time):
+            return self.sync_full()
+        revisions = self.source.collect_revisions(
+            since_id=self.since_id, since_time=self.since_time)
         if len(revisions) == 0:
             logging.info('No new revisions of source CKAN found; doing nothing.')
             return
         elif len(revisions) > 200:
             logging.info('Too many revisions; doing full sync instead.')
-            return self.full_sync()
+            return self.sync_full()
         else:
             # collects deleted items too
             orgs, packages = self.source.collect_changes_from_revisions(revisions)
-            for org in orgs:
-                self.sync_org(org)
-            for package in packages:
-                self.sync_package(package)
+            self.sync_orgs_and_packages(orgs, packages)
             logging.info('Sync completed')
 
+    def sync_loop(self, sleep=60):
+        if not self.since_id:
+            last_revid = self.source.api_action('revision_list')['result'][0]
+            self.sync_full()
+        else:
+            last_revid = self.since_id
 
-def interval_to_timestamp(time_interval):
-    udict = {
-        'm': 'minutes',
-        'h': 'hours',
-        'd': 'days'
-    }
-    match = re.match(r'^(\d+)([mhd])$', time_interval)
-    if not match:
-        raise ValueError('Wrong time interval format, see help for -i param')
-    amount = int(match.group(1))
-    units = udict.get(match.group(2))
-    delta = datetime.timedelta(**{units: amount})
-    since_time = datetime.datetime.utcnow() - delta
-    return since_time.isoformat()
+        while True:
+            try:
+                new_revs = self.source.collect_revisions(since_id=last_revid)
+                if len(new_revs) > 0:
+                    orgs, packages = self.source.collect_changes_from_revisions(
+                        new_revs)
+                    self.sync_orgs_and_packages(orgs, packages)
+                    last_revid = new_revs[-1]
+                time.sleep(sleep)
+            except:
+                logging.exception('Sync loop failed')
+                sys.exit(1)
+
 
 def main():
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    def interval_to_timestamp(time_interval):
+        udict = {
+            'm': 'minutes',
+            'h': 'hours',
+            'd': 'days'
+        }
+        match = re.match(r'^(\d+)([mhd])$', time_interval)
+        if not match:
+            raise ValueError('Wrong time interval format, see help')
+        amount = int(match.group(1))
+        units = udict.get(match.group(2))
+        delta = datetime.timedelta(**{units: amount})
+        since_time = datetime.datetime.utcnow() - delta
+        return since_time.isoformat()
+
+    logformat = '%(asctime)-15s %(levelname)s %(message)s'
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=logformat)
 
     parser = argparse.ArgumentParser(
         description='CKAN synchronization',
-        formatter_class=argparse.RawTextHelpFormatter)
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('config_file', help='path to config file')
-    parser.add_argument('--interval', '-i',
-        help=dedent('''
-            check for changes in last N minutes/hours/days only
-            format: N[mhd]
-            example: -i5m  = sync items changed within last 5 minutes
-        '''))
-    parser.add_argument('--only-packages', '-p', action='store_true',
-        default=False, help='sync only packages')
+    parser.add_argument('--since-time', '-t',
+        help='check for changes in last N minutes/hours/days only '
+             'format: N[mhd] '
+             'example: -t5m  = sync items changed within last 5 minutes')
+    parser.add_argument('--since-id', '-i',
+        help='start synchronization since this revision id')
+
+    daemon = parser.add_argument_group('daemon mode')
+    daemon.add_argument('--daemon-mode', '-d', action='store_true',
+        default=False, help='run in daemon mode')
+    daemon.add_argument('--sleep', '-s',
+        default=60, help='sleep time for periodic checks, in seconds')
 
     args = parser.parse_args()
-    if args.interval:
-        since_time = interval_to_timestamp(args.interval)
-    else:
-        since_time = None
 
     config = configparser.ConfigParser()
     config.read(args.config_file)
 
     source = CkanApi(**dict(config.items('source')))
     target = CkanApi(**dict(config.items('target')))
+    since_time = interval_to_timestamp(args.since_time) if args.since_time else None
     temp_path = config['sync']['temp_path']
-
-    sync = CkanSync(source, target, since_time=since_time, temp_path=temp_path)
-    sync.sync(only_packages=args.only_packages)
+    sync = CkanSync(
+        source,
+        target,
+        since_id=args.since_id,
+        since_time=since_time,
+        temp_path=temp_path)
 
     source.empty_trash()
     target.empty_trash()
+
+    if args.daemon_mode:
+        sync.sync_loop(sleep=int(args.sleep))
+    else:
+        sync.sync()
 
 
 if __name__ == '__main__':
