@@ -35,6 +35,14 @@ class Organization(dict):
                     for ed in org_dict.get('extras', [])]
         self.update({'extras': sorted(extras, key=lambda x: x['key'])})
 
+        self._image_url = org_dict.get('image_display_url')
+
+    @property
+    def image_name(self):
+        filename = os.path.basename(self._image_url)
+        orig_name = re.sub(r'^[\d-]+\.\d{6}', '', filename)
+        return orig_name
+
 
 class PackageMetadata(dict):
     """Copy of CKAN package dict containing only non-internal package metadata
@@ -167,11 +175,13 @@ class CkanApi:
         logging.info('Creating organization %(name)s' % org_dict)
         return self.api_action('organization_create', json=org_dict)
 
-    def patch_organization(self, org_dict):
+    def patch_organization(self, org_dict, files=None):
         logging.info('Updating organization %(name)s' % org_dict)
         if 'id' not in org_dict.keys():
             org_dict['id'] = org_dict['name']
-        return self.api_action('organization_patch', json=org_dict)
+        datakey = 'data' if files else 'json'
+        return self.api_action(
+            'organization_patch', **{datakey: org_dict, 'files': files})
 
     # Packages
 
@@ -311,15 +321,28 @@ class CkanSync:
 
     # Synchronization of organizations, packages & resources
 
-    def sync_org(self, org_name):   # todo sync logos via image_upload
+    def sync_org(self, org_name):
+        def sync_image():
+            image_file = self.download_file(s_org._image_url, s_org.image_name)
+            files = [('image_upload', open(image_file, 'rb'))]
+            self.target.patch_organization({'name': org_name}, files)
+            os.remove(image_file)
+
         logging.info('Syncing organization %s', org_name)
         s_org = Organization(self.source.get_organization(org_name))
         t_org_full = self.target.get_organization(org_name)
         if not t_org_full:
             self.target.create_organization(s_org)
+            # image upload must be done in this extra step, there is collision
+            # with processing of organization 'extras' otherwise
+            sync_image()
         else:
-            if s_org != Organization(t_org_full):
+            t_org = Organization(t_org_full)
+            if s_org != t_org:
                 self.target.patch_organization(s_org)
+            if s_org.image_name != t_org.image_name:
+                sync_image()
+
 
     def sync_package(self, package):
         '''Param package: either full package dict returned by source CKAN,
@@ -505,11 +528,11 @@ def main():
     parser.add_argument('--since-id', '-i',
         help='start synchronization since this revision id')
 
-    loop = parser.add_argument_group('sync loop')
+    loop = parser.add_argument_group('loop mode')
     loop.add_argument('--loop', '-l', action='store_true',
-        default=False, help='run synchronization in loop')
+        default=False, help='run in loop and periodically check for changes')
     loop.add_argument('--sleep', '-s',
-        default=60, help='sleep time for periodic checks (in seconds)')
+        default=60, help='time interval for periodic checks (in seconds)')
 
     args = parser.parse_args()
 
