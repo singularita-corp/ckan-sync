@@ -492,7 +492,7 @@ def main():
         return since_time.isoformat()
 
     logformat = '%(asctime)-15s %(levelname)s %(message)s'
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=logformat)
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=logformat)
 
     parser = argparse.ArgumentParser(
         description='CKAN synchronization',
@@ -505,11 +505,11 @@ def main():
     parser.add_argument('--since-id', '-i',
         help='start synchronization since this revision id')
 
-    daemon = parser.add_argument_group('daemon mode')
-    daemon.add_argument('--daemon-mode', '-d', action='store_true',
-        default=False, help='run in daemon mode')
-    daemon.add_argument('--sleep', '-s',
-        default=60, help='sleep time for periodic checks, in seconds')
+    loop = parser.add_argument_group('sync loop')
+    loop.add_argument('--loop', '-l', action='store_true',
+        default=False, help='run synchronization in loop')
+    loop.add_argument('--sleep', '-s',
+        default=60, help='sleep time for periodic checks (in seconds)')
 
     args = parser.parse_args()
 
@@ -530,7 +530,7 @@ def main():
     source.empty_trash()
     target.empty_trash()
 
-    if args.daemon_mode:
+    if args.loop:
         sync.sync_loop(sleep=int(args.sleep))
     else:
         sync.sync()
