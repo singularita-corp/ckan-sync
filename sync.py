@@ -146,13 +146,16 @@ class CkanApi:
         self.api_url = api_url
         self.api_key = api_key
         self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': self.api_key,
+            'User-Agent': 'ckan-sync',
+        })
 
     def __str__(self):
         return "<CkanApi %s>" % self.api_url
 
     def api_action(self, action, **kwargs):
         url = '/'.join([self.api_url.strip('/'), 'action', action])
-        kwargs.update(headers={'Authorization': self.api_key})
         if ('json' in kwargs) or ('data' in kwargs):
             r = self.session.post(url=url, **kwargs)
             r.raise_for_status()
