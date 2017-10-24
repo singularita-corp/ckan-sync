@@ -13,7 +13,7 @@ It syncs:
 - Organizations
     - Descriptions
     - Metadata
+    - Logo images
 
 It doesn't sync:
 - Pages, blog posts and site descriptions
-- Logos of organizations
