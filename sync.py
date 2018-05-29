@@ -87,6 +87,13 @@ class PackageMetadata(dict):
             'owner_org': package_dict['organization']['name'],
         })
 
+        # Strip leading and trailing whitespace from all string values.
+        # CKAN 2.8 validates 'author_email' more strictly than previous
+        # versions, for example.
+        for k, v in self.items():
+            if isinstance(v, str):
+                self[k] = v.strip()
+
 
 class Resource(dict):
     """Dict representing CKAN resource.
